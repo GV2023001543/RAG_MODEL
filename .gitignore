@@ -24,6 +24,8 @@ env/
 *.sqlite3
 chatbot.db
 user_api_keys.db
+.rag_data/
+test-results/
 
 # Editor and OS files
 .vscode/

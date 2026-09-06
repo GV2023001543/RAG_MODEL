@@ -1,0 +1,73 @@
+name: Streamlit Keepalive
+
+on:
+  schedule:
+    # Avoid the start of the hour, when scheduled Actions are most likely to be delayed.
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Optional Streamlit URL (overrides STREAMLIT_APP_URL for this run)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streamlit-keepalive
+  cancel-in-progress: true
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      STREAMLIT_APP_URL: ${{ github.event.inputs.app_url || vars.STREAMLIT_APP_URL }}
+    steps:
+      - name: Wake app and verify health
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [ -z "$STREAMLIT_APP_URL" ]; then
+            echo "::error::STREAMLIT_APP_URL is missing. Add it under Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+
+          case "$STREAMLIT_APP_URL" in
+            http://*|https://*) ;;
+            *)
+              echo "::error::STREAMLIT_APP_URL must begin with http:// or https://."
+              exit 1
+              ;;
+          esac
+
+          app_url="${STREAMLIT_APP_URL%/}"
+          health_url="${app_url}/_stcore/health"
+
+          # The first request wakes a sleeping Community Cloud app. It is allowed
+          # to fail while the app is starting; the health loop below is authoritative.
+          curl --silent --show-error --location --max-redirs 5 \
+            --connect-timeout 15 --max-time 45 --output /dev/null "$app_url" || true
+
+          for attempt in {1..12}; do
+            response_file="$(mktemp)"
+            status="$(curl --silent --show-error --location --max-redirs 5 \
+              --connect-timeout 15 --max-time 30 --output "$response_file" \
+              --write-out '%{http_code}' "$health_url" || true)"
+            body="$(tr -d '\r\n' < "$response_file")"
+            rm -f "$response_file"
+
+            if [ "$status" = "200" ] && [ "$body" = "ok" ]; then
+              echo "Streamlit health check passed on attempt ${attempt}."
+              printf '### Streamlit keepalive\n\n- Status: healthy\n- Attempt: %s\n' "$attempt" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}/12: health endpoint returned HTTP ${status:-000}; retrying in 10 seconds."
+            sleep 10
+          done
+
+          echo "::error::The Streamlit app did not become healthy. Verify STREAMLIT_APP_URL is the canonical https://<app-name>.streamlit.app URL and that the app deploys successfully."
+          exit 1
