@@ -239,7 +239,7 @@ def settings_dialog():
         admin_password = _server_secret('ADMIN_PASSWORD')
         authenticated = st.session_state.get('admin_authenticated', False)
         if not admin_password:
-            st.info('Set ADMIN_PASSWORD on the server to manage shared keys here. Environment key pools remain available without this screen.')
+            st.info('Admin access is not configured for this deployment. Open the app from your Streamlit Cloud dashboard, choose **Settings → Secrets**, add `ADMIN_PASSWORD = "your-password"`, save, and restart the app. The password field will then appear here.')
         elif not authenticated:
             locked_until = st.session_state.get('admin_locked_until', 0.0)
             locked = locked_until > time.time()

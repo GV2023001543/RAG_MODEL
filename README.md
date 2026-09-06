@@ -42,6 +42,18 @@ can configure endpoints, models, token limits, timeouts, enabled status, and
 fallback priority, and can add multiple encrypted keys per provider. Lower
 priority numbers are attempted first.
 
+For Streamlit Community Cloud, open the app in the
+[workspace dashboard](https://share.streamlit.io/), select **Settings >
+Secrets**, and add the following TOML. Save it and restart the app:
+
+```toml
+ADMIN_PASSWORD = "replace-with-a-strong-password"
+RAG_KEY_ENCRYPTION_KEY = "replace-with-a-long-random-secret"
+```
+
+The local `.env` file is ignored by Git and is therefore not available to a
+deployed app.
+
 System keys can also be supplied without the UI using comma-separated variables:
 
 ```text
