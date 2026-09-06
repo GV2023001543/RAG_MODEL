@@ -7,7 +7,6 @@ import re
 import unicodedata
 from typing import List, Tuple
 from langchain_core.messages import HumanMessage
-from langchain_groq import ChatGroq
 logger = logging.getLogger(__name__)
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 SUPPORTED_EXTS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".csv", ".txt", ".md"}

@@ -20,10 +20,14 @@ from streamlit_javascript import st_javascript
 load_dotenv(Path(__file__).with_name('.env'), override=False)
 
 from langgraph_rag_backend import (
-    chat_model_status, content_text, delete_conversation, export_conversation_txt,
-    friendly_error, generate_chat_title, get_chatbot, get_thread_title, ingest_file,
+    delete_conversation, export_conversation_txt, generate_chat_title, get_chatbot,
+    get_thread_title, ingest_file,
     remove_thread_document, retrieve_user_threads, set_thread_title, storage,
-    thread_document_metadata, save_user_provider_key, list_user_provider_keys,
+    thread_document_metadata,
+)
+from rag_providers import (
+    chat_model_status, content_text, friendly_error,
+    save_user_provider_key, list_user_provider_keys,
     delete_user_provider_key, set_user_provider_key_enabled,
     save_system_provider_key, list_system_provider_keys, delete_system_provider_key,
     set_system_provider_key_enabled, revalidate_provider_key,
@@ -56,10 +60,12 @@ def _css():
     if st.session_state.get('appearance') == 'dark':
         css += '''
         :root { --bg:#15211c; --side:#101b16; --panel:#1c2c24; --soft:#213329;
-          --ink:#e5eee3; --muted:#a0b49f; --line:#324839; --green:#80be8e; --accent:#294633; }
+          --ink:#e5eee3; --muted:#a0b49f; --line:#324839; --green:#80be8e; --accent:#294633;
+          --glow-a:#20372b; --glow-b:#182a21; }
         .brand-mark, .stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] { color:#14251a; }
         [data-testid="stChatInput"] textarea { -webkit-text-fill-color:var(--ink); }
         [data-testid="stWidgetLabel"], [data-testid="stFileUploaderDropzone"] { color:var(--ink); }
+        [data-testid="stChatInput"] > div, [data-testid="stChatInput"] textarea { background:var(--panel) !important; }
         '''
     return '<style>' + css + '</style>'
 
@@ -474,53 +480,54 @@ def main_page():
         if st.button('Settings', icon=':material/tune:', use_container_width=True,
                      key='header_settings', type='secondary'):
             settings_dialog()
-    history, main, rail = st.columns([0.72, 2.45, 1], gap='large')
-    with history:
-        history_panel()
-    with rail:
-        library(meta)
-    with main:
-        if not messages:
-            welcome()
-        else:
-            st.markdown(f'<div class="conversation-heading">{html.escape(title)}</div>', unsafe_allow_html=True)
-            document_count = int(meta.get('file_count', 0)) if meta else 0
-            passage_count = int(meta.get('chunks', 0)) if meta else 0
-            route = str(status.get('provider', 'none')).replace('_', ' ').title()
-            st.markdown(f'''<div class="conversation-overview">
-              <div><strong>{document_count}</strong><span>{'document' if document_count == 1 else 'documents'}</span></div>
-              <div><strong>{passage_count}</strong><span>{'passage' if passage_count == 1 else 'passages'} indexed</span></div>
-              <div><strong>{len(messages)}</strong><span>messages</span></div>
-              <div class="route"><span class="status-dot"></span><strong>{html.escape(route)}</strong><span>active route</span></div>
-            </div>''', unsafe_allow_html=True)
-            with st.container(key='conversation'):
-                for message in messages:
-                    _render_message(message)
-            controls = st.columns([1.5, 1])
-            with controls[0]:
-                st.download_button('Export conversation', export_conversation_txt(messages, title), file_name='teamdino-conversation.txt',
-                                   mime='text/plain', icon=':material/download:', use_container_width=True)
-            with controls[1]:
-                with st.popover('Manage chat', use_container_width=True):
-                    new_title = st.text_input('Conversation name', value=title, max_chars=100)
-                    if st.button('Rename conversation', disabled=not new_title.strip()):
-                        set_thread_title(tid, new_title.strip())
-                        st.rerun()
-                    if st.button('Delete this conversation', icon=':material/delete:'):
-                        delete_conversation(tid, st.session_state['user_id'])
-                        reset_chat()
-                        st.rerun()
-        if not status['configured']:
-            st.info('Add a personal AI key in Settings, or ask an administrator to configure the shared key pool.', icon=':material/key:')
-        restored = st.session_state.pop('browser_history_restored', 0)
-        if restored:
-            st.info(f'Restored {restored} conversation{"s" if restored != 1 else ""} from this browser. Re-upload documents if their server index is no longer available.',
-                    icon=':material/history:')
-        failed = st.session_state.get('failed_request')
-        if failed:
-            st.error(failed['error'])
-            if st.button('Retry response', icon=':material/refresh:'):
-                _answer(failed['question'], failed['id'])
+    with st.container(key='workspace_layout'):
+        history, main, rail = st.columns([0.72, 2.45, 1], gap='large')
+        with history:
+            history_panel()
+        with rail:
+            library(meta)
+        with main:
+            if not messages:
+                welcome()
+            else:
+                st.markdown(f'<div class="conversation-heading">{html.escape(title)}</div>', unsafe_allow_html=True)
+                document_count = int(meta.get('file_count', 0)) if meta else 0
+                passage_count = int(meta.get('chunks', 0)) if meta else 0
+                route = str(status.get('provider', 'none')).replace('_', ' ').title()
+                st.markdown(f'''<div class="conversation-overview">
+                  <div><strong>{document_count}</strong><span>{'document' if document_count == 1 else 'documents'}</span></div>
+                  <div><strong>{passage_count}</strong><span>{'passage' if passage_count == 1 else 'passages'} indexed</span></div>
+                  <div><strong>{len(messages)}</strong><span>messages</span></div>
+                  <div class="route"><span class="status-dot"></span><strong>{html.escape(route)}</strong><span>active route</span></div>
+                </div>''', unsafe_allow_html=True)
+                with st.container(key='conversation'):
+                    for message in messages:
+                        _render_message(message)
+                controls = st.columns([1.5, 1])
+                with controls[0]:
+                    st.download_button('Export conversation', export_conversation_txt(messages, title), file_name='teamdino-conversation.txt',
+                                       mime='text/plain', icon=':material/download:', use_container_width=True)
+                with controls[1]:
+                    with st.popover('Manage chat', use_container_width=True):
+                        new_title = st.text_input('Conversation name', value=title, max_chars=100)
+                        if st.button('Rename conversation', disabled=not new_title.strip()):
+                            set_thread_title(tid, new_title.strip())
+                            st.rerun()
+                        if st.button('Delete this conversation', icon=':material/delete:'):
+                            delete_conversation(tid, st.session_state['user_id'])
+                            reset_chat()
+                            st.rerun()
+            if not status['configured']:
+                st.info('Add a personal AI key in Settings, or ask an administrator to configure the shared key pool.', icon=':material/key:')
+            restored = st.session_state.pop('browser_history_restored', 0)
+            if restored:
+                st.info(f'Restored {restored} conversation{"s" if restored != 1 else ""} from this browser. Re-upload documents if their server index is no longer available.',
+                        icon=':material/history:')
+            failed = st.session_state.get('failed_request')
+            if failed:
+                st.error(failed['error'])
+                if st.button('Retry response', icon=':material/refresh:'):
+                    _answer(failed['question'], failed['id'])
     submission = st.chat_input('Ask a question, connect an idea, or attach your notes...', key='rag_chat_input',
                                accept_file='multiple', file_type=SUPPORTED_TYPES, max_chars=6000, max_upload_size=25)
     question, files = _coerce_submission(submission)
@@ -528,7 +535,7 @@ def main_page():
         return
     if files:
         with main:
-            indexed, errors = _upload_files(files)
+            _, errors = _upload_files(files)
         if errors:
             # Never answer as if a failed attachment had been read.
             if question:

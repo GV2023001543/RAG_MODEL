@@ -19,8 +19,6 @@ from __future__ import annotations
 import os
 import glob
 import logging
-from typing import Optional
-
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter

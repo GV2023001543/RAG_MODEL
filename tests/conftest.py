@@ -11,7 +11,6 @@ os.environ['RAG_KEY_ENCRYPTION_KEY'] = 'test-only-encryption-key'
 
 import pytest
 import langgraph_rag_backend as backend
-import rag_providers as providers
 import key_vault as vault
 import rag_storage as storage
 from langchain_core.embeddings import Embeddings

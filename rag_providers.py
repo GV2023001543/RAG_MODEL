@@ -12,11 +12,6 @@ from provider_adapters import build_chat_model
 logger = logging.getLogger(__name__)
 DEFAULT_TEXT_MODEL = "openai/gpt-oss-120b"
 DEFAULT_VISION_MODEL = "qwen/qwen3.6-27b"
-MODEL_PROVIDER_SLOTS = {
-    "chat": {"label": "Chat model", "provider": "groq", "default_model": DEFAULT_TEXT_MODEL},
-    "vision": {"label": "Vision / OCR", "provider": "groq", "default_model": DEFAULT_VISION_MODEL},
-    "search": {"label": "Web search", "provider": "tavily", "default_model": ""},
-}
 
 
 class MissingAPIKeyError(RuntimeError):
@@ -50,14 +45,6 @@ def content_text(content) -> str:
             if isinstance(part, str) or isinstance(part, dict) and part.get("type") == "text"
         )
     return ""
-
-
-def _resolve_groq_model_name(candidate: str | None) -> str:
-    for value in (candidate, os.getenv("GROQ_TEXT_MODEL", "")):
-        model = (value or "").strip()
-        if model and model.lower() not in {"groq", "ox-alpha", "ox_alpha"}:
-            return model
-    return DEFAULT_TEXT_MODEL
 
 
 def _status_code(exc: Exception) -> int | None:
@@ -158,8 +145,6 @@ class PooledChatModel:
         raise ProviderPoolExhausted(attempts)
 
 
-# Backwards-compatible name used by older imports.
-FallbackChatModel = PooledChatModel
 _REVISION_LOCK = threading.Lock()
 _CONFIG_REVISION = 0
 
@@ -303,62 +288,6 @@ def save_provider_config(name: str, adapter: str, endpoint: str, model: str,
                          enabled: bool = True) -> None:
     vault.upsert_provider(name, adapter, endpoint, model, max_tokens, timeout, priority, enabled)
     _bump_revision()
-
-
-# Compatibility helpers for prior versions and external callers. Secrets are never returned.
-def save_user_keys(user_id: str, groq_key: str = "", tavily_key: str = "") -> None:
-    if groq_key.strip():
-        save_user_provider_key(user_id, "groq", groq_key, "Groq personal key")
-    if tavily_key.strip():
-        vault.save_service_key(user_id, "tavily", tavily_key)
-
-
-def load_user_keys(user_id: str) -> dict:
-    providers = {item["provider"] for item in list_user_provider_keys(user_id) if item["enabled"]}
-    return {"groq_key": "saved" if "groq" in providers else "",
-            "tavily_key": "saved" if vault.service_key_status(user_id, "tavily")["configured"] else ""}
-
-
-def user_has_keys(user_id: str) -> bool:
-    return bool(list_user_provider_keys(user_id))
-
-
-def _resolve_groq_api_key(user_id: str = "", slot: str = "vision") -> str:
-    candidate = next((c for c in vault.request_candidates(user_id) if c.provider == "groq"), None)
-    return candidate.api_key if candidate else ""
-
-
-def get_model_provider_config(slot: str) -> dict:
-    if slot == "search":
-        return {"slot": slot, "label": "Web search", "provider": "tavily", "model_name": "",
-                "has_key": bool(os.getenv("TAVILY_API_KEY")), "enabled": True, "key_source": "environment"}
-    name = "groq" if slot == "vision" else chat_model_status("")["provider"]
-    config = vault.provider_config(name) if name != "none" else vault.provider_config("groq")
-    return {"slot": slot, "label": MODEL_PROVIDER_SLOTS[slot]["label"], "provider": name,
-            "model_name": DEFAULT_VISION_MODEL if slot == "vision" else config["model"],
-            "has_key": any(c.provider == name for c in vault.request_candidates("")),
-            "enabled": config["enabled"], "key_source": "pool"}
-
-
-def list_model_provider_configs() -> list[dict]:
-    return [get_model_provider_config(slot) for slot in MODEL_PROVIDER_SLOTS]
-
-
-def save_model_provider_config(slot: str, provider: str, model_name: str = "", api_key: str = "", enabled: bool = True) -> None:
-    if slot not in {"chat", "vision"}:
-        raise ValueError("Use environment configuration for web search.")
-    current = vault.provider_config(provider)
-    save_provider_config(provider, current["adapter"], current["endpoint"], model_name or current["model"],
-                         current["max_tokens"], current["timeout"], current["priority"], enabled)
-    if api_key.strip():
-        save_system_provider_key(provider, api_key, f"{provider.title()} system key")
-
-
-def clear_model_provider_key(slot: str) -> None:
-    provider = get_model_provider_config(slot)["provider"]
-    for key in list_system_provider_keys():
-        if key["provider"] == provider:
-            delete_system_provider_key(key["key_id"])
 
 
 def friendly_error(exc: Exception) -> str:
